@@ -1,5 +1,6 @@
 *.pdf
 data/
+features/
 __pycache__/
 *.pyc
 .venv/
