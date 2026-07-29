@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 
 import numpy as np
@@ -37,13 +38,14 @@ def load_backbone(model_name: str, device: torch.device):
     return processor, model
 
 
-def build_transform(processor) -> transforms.Compose:
+def build_transform(processor):
     size = processor.crop_size["height"] if hasattr(processor, "crop_size") else processor.size["shortest_edge"]
-    return transforms.Compose([
+    transform = transforms.Compose([
         transforms.Resize((size, size)),
         transforms.ToTensor(),
         transforms.Normalize(mean=processor.image_mean, std=processor.image_std),
     ])
+    return transform, size
 
 
 def build_dataset(transform: transforms.Compose, train: bool) -> torchvision.datasets.CIFAR10:
@@ -61,18 +63,68 @@ def extract_features(model, loader: DataLoader, device: torch.device):
     return np.concatenate(feats), np.concatenate(labels)
 
 
-def load_cached_features(features_dir: str, split: str):
-    feats_path = os.path.join(features_dir, f"{split}_features.npy")
-    labels_path = os.path.join(features_dir, f"{split}_labels.npy")
-    if os.path.exists(feats_path) and os.path.exists(labels_path):
-        return np.load(feats_path), np.load(labels_path)
-    return None, None
+def sanitize_model_name(model_name: str) -> str:
+    return model_name.replace("/", "_")
 
 
-def save_features(features_dir: str, split: str, feats: np.ndarray, labels: np.ndarray) -> None:
-    os.makedirs(features_dir, exist_ok=True)
-    np.save(os.path.join(features_dir, f"{split}_features.npy"), feats)
-    np.save(os.path.join(features_dir, f"{split}_labels.npy"), labels)
+def model_cache_dir(features_dir: str, model_name: str) -> str:
+    return os.path.join(features_dir, sanitize_model_name(model_name))
+
+
+def load_meta(model_dir: str) -> dict:
+    meta_path = os.path.join(model_dir, "meta.json")
+    if os.path.exists(meta_path):
+        with open(meta_path) as f:
+            return json.load(f)
+    return {}
+
+
+def save_meta(model_dir: str, model_name: str, image_size: int, feature_dim: int, split: str, num_samples: int) -> None:
+    meta = load_meta(model_dir)
+    meta["model"] = model_name
+    meta["image_size"] = image_size
+    meta["feature_dim"] = feature_dim
+    meta.setdefault("num_samples", {})[split] = num_samples
+    with open(os.path.join(model_dir, "meta.json"), "w") as f:
+        json.dump(meta, f, indent=2)
+
+
+def load_cached_features(features_dir: str, model_name: str, split: str):
+    model_dir = model_cache_dir(features_dir, model_name)
+    feats_path = os.path.join(model_dir, f"{split}_features.npy")
+    labels_path = os.path.join(model_dir, f"{split}_labels.npy")
+    if not (os.path.exists(feats_path) and os.path.exists(labels_path)):
+        return None, None
+
+    meta = load_meta(model_dir)
+    if meta.get("model") != model_name:
+        print(f"Cache meta mismatch in {model_dir} (expected model={model_name!r}), ignoring cache")
+        return None, None
+
+    feats = np.load(feats_path)
+    labels = np.load(labels_path)
+
+    expected_dim = meta.get("feature_dim")
+    if expected_dim is not None and feats.shape[1] != expected_dim:
+        print(f"Cache dim mismatch in {model_dir} ({feats.shape[1]} != {expected_dim}), ignoring cache")
+        return None, None
+
+    expected_n = meta.get("num_samples", {}).get(split)
+    if expected_n is not None and feats.shape[0] != expected_n:
+        print(f"Cache size mismatch in {model_dir} ({feats.shape[0]} != {expected_n}), ignoring cache")
+        return None, None
+
+    return feats, labels
+
+
+def save_features(
+    features_dir: str, model_name: str, split: str, feats: np.ndarray, labels: np.ndarray, image_size: int
+) -> None:
+    model_dir = model_cache_dir(features_dir, model_name)
+    os.makedirs(model_dir, exist_ok=True)
+    np.save(os.path.join(model_dir, f"{split}_features.npy"), feats)
+    np.save(os.path.join(model_dir, f"{split}_labels.npy"), labels)
+    save_meta(model_dir, model_name, image_size, feats.shape[1], split, feats.shape[0])
 
 
 def knn_eval(train_feats, train_labels, test_feats, test_labels, k: int) -> float:
@@ -113,16 +165,18 @@ def main() -> None:
     device = get_device()
     print(f"Device: {device}")
 
+    model_dir = model_cache_dir(args.features_dir, args.model)
+
     train_feats, train_labels = (None, None)
     test_feats, test_labels = (None, None)
     if not args.no_cache:
-        train_feats, train_labels = load_cached_features(args.features_dir, "train")
-        test_feats, test_labels = load_cached_features(args.features_dir, "test")
+        train_feats, train_labels = load_cached_features(args.features_dir, args.model, "train")
+        test_feats, test_labels = load_cached_features(args.features_dir, args.model, "test")
 
     if train_feats is None or test_feats is None:
         print(f"Loading backbone: {args.model}")
         processor, model = load_backbone(args.model, device)
-        transform = build_transform(processor)
+        transform, image_size = build_transform(processor)
 
         print("Preparing CIFAR-10 train/test sets")
         train_set = build_dataset(transform, train=True)
@@ -136,12 +190,13 @@ def main() -> None:
         print("Extracting frozen features (test split)")
         test_feats, test_labels = extract_features(model, test_loader, device)
 
-        print(f"Saving features to {args.features_dir}/")
-        save_features(args.features_dir, "train", train_feats, train_labels)
-        save_features(args.features_dir, "test", test_feats, test_labels)
+        print(f"Saving features to {model_dir}/")
+        save_features(args.features_dir, args.model, "train", train_feats, train_labels, image_size)
+        save_features(args.features_dir, args.model, "test", test_feats, test_labels, image_size)
     else:
-        print(f"Loaded cached features from {args.features_dir}/ (use --no-cache to re-extract)")
+        print(f"Loaded cached features from {model_dir}/ (use --no-cache to re-extract)")
 
+    print(f"Feature dim: {train_feats.shape[1]}")
     print(f"Running k-NN (k={args.knn_k})")
     knn_acc = knn_eval(train_feats, train_labels, test_feats, test_labels, k=args.knn_k)
 

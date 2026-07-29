@@ -21,7 +21,7 @@ python dino_feature_eval.py --model facebook/dinov3-vits16-pretrain-lvd1689m
 Script:
 1. Belirtilen backbone'u ve ona ait `AutoImageProcessor`'ı yükler (model dondurulur, gradyan hesaplanmaz).
 2. CIFAR-10 train/test setlerini indirir, modele uygun ön işlemeyi (resize + ImageNet normalizasyonu) uygular.
-3. `torch.no_grad()` altında her görüntü için CLS token özelliğini çıkarır ve `features/{train,test}_features.npy` ile `features/{train,test}_labels.npy` olarak kaydeder (bir sonraki çalıştırmada bu dosyalar varsa yeniden çıkarım yapılmaz; `--no-cache` ile zorlanabilir).
+3. `torch.no_grad()` altında her görüntü için CLS token özelliğini çıkarır ve `features/{model_adı}/{train,test}_features.npy` ile `_labels.npy` olarak kaydeder. Her model kendi alt dizinine yazar (`facebook/dinov2-small` → `features/facebook_dinov2-small/`), böylece farklı modellerle yapılan çalıştırmalar birbirinin cache'ini ezmez. Yanına yazılan `meta.json` (model adı, `image_size`, `feature_dim`, örnek sayısı) her yüklemede doğrulanır; uyuşmazsa cache yok sayılıp özellikler yeniden çıkarılır. Zorla yeniden çıkarım için `--no-cache`.
 4. Özellikler üzerinde k-NN (varsayılan k=20, cosine metrik) ve logistic regression tabanlı linear probe eğitir.
 5. Test doğruluğunu raporlar.
 
