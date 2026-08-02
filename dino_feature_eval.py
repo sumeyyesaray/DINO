@@ -134,7 +134,7 @@ def knn_eval(train_feats, train_labels, test_feats, test_labels, k: int) -> floa
 
 
 def linear_probe_eval(train_feats, train_labels, test_feats, test_labels) -> float:
-    clf = LogisticRegression(max_iter=2000, multi_class="multinomial")
+    clf = LogisticRegression(max_iter=2000)
     clf.fit(train_feats, train_labels)
     return accuracy_score(test_labels, clf.predict(test_feats))
 
