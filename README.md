@@ -27,3 +27,13 @@ Script:
 
 Elde edilen k-NN / linear probe doğrulukları, önceki makaledeki fine-tuned
 ViT-B/16 vs Swin-T sonuçlarıyla karşılaştırılmak üzere kullanılır.
+
+## Sonuçlar
+
+CIFAR-10 (50.000 train / 10.000 test), tam veri seti üzerinde CPU'da çalıştırıldı.
+
+| Model | Feature dim | k-NN (k=20, cosine) | Linear probe |
+|---|---|---|---|
+| `facebook/dinov2-small` | 384 | 94.48% | 94.86% |
+
+`dinov2-base` ve `dinov3` varyantları için henüz sonuç yok; bu tabloya eklendikçe güncellenecek.
