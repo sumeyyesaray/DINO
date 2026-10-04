@@ -187,11 +187,12 @@ def main() -> None:
 
         print("Extracting frozen features (train split)")
         train_feats, train_labels = extract_features(model, train_loader, device)
+        print(f"Saving train features to {model_dir}/ (checkpoint before test split)")
+        save_features(args.features_dir, args.model, "train", train_feats, train_labels, image_size)
+
         print("Extracting frozen features (test split)")
         test_feats, test_labels = extract_features(model, test_loader, device)
-
-        print(f"Saving features to {model_dir}/")
-        save_features(args.features_dir, args.model, "train", train_feats, train_labels, image_size)
+        print(f"Saving test features to {model_dir}/")
         save_features(args.features_dir, args.model, "test", test_feats, test_labels, image_size)
     else:
         print(f"Loaded cached features from {model_dir}/ (use --no-cache to re-extract)")
