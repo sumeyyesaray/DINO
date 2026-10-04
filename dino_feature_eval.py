@@ -20,7 +20,7 @@ import torchvision
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.neighbors import KNeighborsClassifier
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import transforms
 from transformers import AutoImageProcessor, AutoModel
 
@@ -53,14 +53,46 @@ def build_dataset(transform: transforms.Compose, train: bool) -> torchvision.dat
 
 
 @torch.no_grad()
-def extract_features(model, loader: DataLoader, device: torch.device):
-    feats, labels = [], []
+def extract_features_resumable(
+    model,
+    dataset,
+    device: torch.device,
+    batch_size: int,
+    num_workers: int,
+    checkpoint_path: str,
+    checkpoint_every: int = 20,
+):
+    """Extracts CLS-token features, periodically dumping progress to checkpoint_path
+    so a crash (e.g. a native segfault) only loses up to checkpoint_every batches
+    instead of the whole split."""
+    feats_chunks, labels_chunks = [], []
+    start_idx = 0
+    if os.path.exists(checkpoint_path):
+        saved = np.load(checkpoint_path)
+        feats_chunks = [saved["feats"]]
+        labels_chunks = [saved["labels"]]
+        start_idx = saved["feats"].shape[0]
+        print(f"Resuming from checkpoint: {start_idx}/{len(dataset)} samples already done")
+
+    remaining = Subset(dataset, range(start_idx, len(dataset)))
+    loader = DataLoader(remaining, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    batches_since_checkpoint = 0
     for images, targets in loader:
         images = images.to(device)
         cls_token = model(pixel_values=images).last_hidden_state[:, 0, :]
-        feats.append(cls_token.cpu().numpy())
-        labels.append(targets.numpy())
-    return np.concatenate(feats), np.concatenate(labels)
+        feats_chunks.append(cls_token.cpu().numpy())
+        labels_chunks.append(targets.numpy())
+        batches_since_checkpoint += 1
+
+        if batches_since_checkpoint >= checkpoint_every:
+            feats_chunks = [np.concatenate(feats_chunks)]
+            labels_chunks = [np.concatenate(labels_chunks)]
+            np.savez(checkpoint_path, feats=feats_chunks[0], labels=labels_chunks[0])
+            print(f"Checkpoint: {feats_chunks[0].shape[0]}/{len(dataset)} samples done")
+            batches_since_checkpoint = 0
+
+    return np.concatenate(feats_chunks), np.concatenate(labels_chunks)
 
 
 def sanitize_model_name(model_name: str) -> str:
@@ -182,18 +214,27 @@ def main() -> None:
         train_set = build_dataset(transform, train=True)
         test_set = build_dataset(transform, train=False)
 
-        train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-        test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        os.makedirs(model_dir, exist_ok=True)
+        train_ckpt = os.path.join(model_dir, ".train_checkpoint.npz")
+        test_ckpt = os.path.join(model_dir, ".test_checkpoint.npz")
 
         print("Extracting frozen features (train split)")
-        train_feats, train_labels = extract_features(model, train_loader, device)
+        train_feats, train_labels = extract_features_resumable(
+            model, train_set, device, args.batch_size, args.num_workers, train_ckpt
+        )
         print(f"Saving train features to {model_dir}/ (checkpoint before test split)")
         save_features(args.features_dir, args.model, "train", train_feats, train_labels, image_size)
+        if os.path.exists(train_ckpt):
+            os.remove(train_ckpt)
 
         print("Extracting frozen features (test split)")
-        test_feats, test_labels = extract_features(model, test_loader, device)
+        test_feats, test_labels = extract_features_resumable(
+            model, test_set, device, args.batch_size, args.num_workers, test_ckpt
+        )
         print(f"Saving test features to {model_dir}/")
         save_features(args.features_dir, args.model, "test", test_feats, test_labels, image_size)
+        if os.path.exists(test_ckpt):
+            os.remove(test_ckpt)
     else:
         print(f"Loaded cached features from {model_dir}/ (use --no-cache to re-extract)")
 
