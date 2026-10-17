@@ -38,8 +38,26 @@ def load_backbone(model_name: str, device: torch.device):
     return processor, model
 
 
+def resolve_image_size(processor) -> int:
+    """Image processors disagree on where the target size lives: some set
+    crop_size (e.g. dinov2), others leave crop_size None and set size.height
+    or size.shortest_edge instead (e.g. dinov3). Check all of them in order."""
+    crop_size = getattr(processor, "crop_size", None)
+    if crop_size is not None and crop_size.get("height") is not None:
+        return crop_size["height"]
+
+    size = getattr(processor, "size", None)
+    if size is not None:
+        if size.get("height") is not None:
+            return size["height"]
+        if size.get("shortest_edge") is not None:
+            return size["shortest_edge"]
+
+    raise ValueError(f"Could not resolve an image size from processor {processor!r}")
+
+
 def build_transform(processor):
-    size = processor.crop_size["height"] if hasattr(processor, "crop_size") else processor.size["shortest_edge"]
+    size = resolve_image_size(processor)
     transform = transforms.Compose([
         transforms.Resize((size, size)),
         transforms.ToTensor(),
