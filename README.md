@@ -30,6 +30,16 @@ ViT-B/16 vs Swin-T sonuçlarıyla karşılaştırılmak üzere kullanılır.
 
 ## Sonuçlar
 
-Sonuç tablosu ve grafiği [`results.ipynb`](results.ipynb) içinde. Notebook, `features/` altındaki cache'lenmiş özellikleri okuyup k-NN/linear probe skorlarını yeniden hesaplar — yeni bir model çalıştırdıktan sonra notebook'u tekrar çalıştırman yeterli.
+Tam CIFAR-10 (50k train / 10k test) üzerinde, dondurulmuş backbone + k-NN (k=20, cosine) / linear probe:
 
-`dinov2-small` ve `dinov2-base` için sonuçlar tam CIFAR-10 (50k train / 10k test) üzerinde mevcut. `dinov3-vits16-pretrain-lvd1689m` HuggingFace'te gated (kısıtlı erişimli) bir repo olduğu için henüz çalıştırılamadı — [huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m) sayfasından erişim istenip bir HF token (`huggingface-cli login` veya `HF_TOKEN`) ayarlandığında, `python dino_feature_eval.py --model facebook/dinov3-vits16-pretrain-lvd1689m` ile eklenip notebook yeniden çalıştırılabilir.
+| Model | Feature dim | k-NN (k=20) | Linear probe |
+|---|---|---|---|
+| `facebook/dinov2-small` | 384 | 94.48% | 94.86% |
+| `facebook/dinov2-base` | 768 | **97.97%** | **97.58%** |
+| `facebook/dinov3-vits16-pretrain-lvd1689m` | 384 | 95.55% | 95.84% |
+
+`dinov2-base`, en büyük feature boyutuna (768) sahip olduğu için üçü arasında en iyi performansı veriyor. `dinov3-vits16`, `dinov2-small` ile aynı boyutta (384) olmasına rağmen hem k-NN'de (+1.07) hem linear probe'da (+0.98) ondan daha iyi sonuç veriyor — DINOv3'ün ön-eğitim iyileştirmelerinin aynı model boyutunda daha güçlü özellikler ürettiğini gösteriyor.
+
+Tam tablo ve karşılaştırma grafiği [`results.ipynb`](results.ipynb) içinde. Notebook, `features/` altındaki cache'lenmiş özellikleri okuyup k-NN/linear probe skorlarını yeniden hesaplar — yeni bir model çalıştırdıktan sonra notebook'u tekrar çalıştırman yeterli.
+
+Not: `dinov3-vits16-pretrain-lvd1689m` HuggingFace'te gated bir repo — çalıştırmak için önce [model sayfasından](https://huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m) erişim istenip bir HF token (`huggingface-cli login` veya `HF_TOKEN`) ayarlanması gerekir.
