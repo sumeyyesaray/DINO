@@ -31,3 +31,5 @@ ViT-B/16 vs Swin-T sonuçlarıyla karşılaştırılmak üzere kullanılır.
 ## Sonuçlar
 
 Sonuç tablosu ve grafiği [`results.ipynb`](results.ipynb) içinde. Notebook, `features/` altındaki cache'lenmiş özellikleri okuyup k-NN/linear probe skorlarını yeniden hesaplar — yeni bir model çalıştırdıktan sonra notebook'u tekrar çalıştırman yeterli.
+
+`dinov2-small` ve `dinov2-base` için sonuçlar tam CIFAR-10 (50k train / 10k test) üzerinde mevcut. `dinov3-vits16-pretrain-lvd1689m` HuggingFace'te gated (kısıtlı erişimli) bir repo olduğu için henüz çalıştırılamadı — [huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m](https://huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m) sayfasından erişim istenip bir HF token (`huggingface-cli login` veya `HF_TOKEN`) ayarlandığında, `python dino_feature_eval.py --model facebook/dinov3-vits16-pretrain-lvd1689m` ile eklenip notebook yeniden çalıştırılabilir.
